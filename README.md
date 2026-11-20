@@ -3,7 +3,7 @@
 Solute transport in groundwater, using analytical solutions with a source that
 can change in steps (including being switched off).
 
-Current version: 0.1.0
+Current version: 0.2.0
 
 A Streamlit app that shows how a plume grows in steady, uniform flow, and how
 it clears once the source is reduced or removed. It is part of the same suite
