@@ -30,11 +30,11 @@ as HydroSILO, HydroPOINT, HydroSTITCH, HydroCAPTURE and the Hydrochem Workbench.
 | 1D, flux at the inlet | inlet at x = 0 | concentration of the inflow | equations 67, 68 |
 | 2D, point source | point, mixed over the aquifer thickness | mass rate | equation 76 |
 | 2D, line source across the flow | line of width W at x = 0 | concentration | equation 91b |
-| 3D, point source | point | mass rate | equation 105 |
-| 3D, patch source across the flow | rectangle W by H at x = 0 | concentration | equation 121b |
+| 3D, point source | point at a chosen depth | mass rate | equation 105 |
+| 3D, patch source across the flow | rectangle W by H at x = 0, at a chosen depth | concentration | equation 121b |
 
 All assume a uniform aquifer, steady flow in the x direction, linear sorption
-and first-order decay. "Uniform" in Wexler's title refers to the flow field.
+and first-order decay.
 
 ## Method notes
 
@@ -60,6 +60,12 @@ and first-order decay. "Uniform" in Wexler's title refers to the flow field.
 - **Switching off.** For the constant concentration sources a value of zero
   holds the source at zero concentration. For the flux inlet and the point
   sources it stops solute entering.
+- **Water table.** In the 3D solutions z is depth below a flat water table at
+  z = 0, and the source sits at a chosen depth. Solute cannot cross the water
+  table. This is done with a mirror image of the source above it, which is
+  exact for horizontal flow. A point source on the water table gives twice the
+  concentration of the same source in an aquifer with no top. There is no
+  recharge and no aquifer base.
 - **3D view.** Three slices (from above, from the side, across the flow) with
   the slice positions marked, and an optional interactive view of shells of
   equal concentration (Plotly).
@@ -76,8 +82,9 @@ method:
   function K0);
 - adaptive quadrature of Wexler's equations 91b and 121b from 0.01 to 36,500
   days, including 0.01 m from the source, and for a source with step changes;
-- limits (a very tall patch is a strip, a very wide strip is the 1D inlet) and
-  the mass balance of the flux inlet with a changing source.
+- limits (a very tall patch is a strip, a very wide strip is the 1D inlet),
+  the mass balance of the flux inlet with a changing source, and zero vertical
+  gradient at the water table.
 
 ```bash
 pip install pytest
@@ -113,6 +120,12 @@ HydroTRANSPORT/
 - Finite-length columns and the Gaussian source from Wexler (1992), and
   instantaneous (slug) sources.
 - More than one source.
+- An aquifer base, recharge, or flow with a vertical component.
+
+## Licence
+
+Copyright (c) 2026 Charles Darwin University. All rights reserved. See
+`LICENSE`.
 
 ## References
 

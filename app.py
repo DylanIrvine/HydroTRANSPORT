@@ -18,7 +18,7 @@ from hydrotransport import engine, plots, run_counter, solutions, workbook
 # %% page setup
 
 APP_NAME = 'HydroTRANSPORT'
-# app address, used in the citation. Change this if the app is deployed somewhere else
+# app address, used in the citation
 APP_URL = 'https://hydrotransport.streamlit.app/'
 LOGO = Path('logo/HydroTRANSPORT_logo.png')
 FAVICON = Path('logo/HydroTRANSPORT_icon.png')
@@ -73,8 +73,7 @@ with st.expander('**Privacy and data handling**'):
         'using the public web version, your inputs travel to that host (which may be outside '
         'Australia). The hosting provider and the Streamlit framework may use their own cookies '
         'and keep their own server logs, under their own privacy policies.\n'
-        '- If your inputs are confidential, run the app on your own machine. The code is open '
-        'source (MIT).')
+        '- If your inputs are confidential, do not enter them in the public web version.')
 
 with st.expander('**Background: the solutions and their equations**'):
     st.markdown(
@@ -128,8 +127,10 @@ with st.expander('**Background: the solutions and their equations**'):
         'entering.\n\n'
         '**Assumptions common to all six**\n'
         '- The aquifer is uniform and the flow is steady, in one direction, at one velocity.\n'
-        '- The aquifer extends a long way downstream and, for 2D and 3D, sideways. The 3D '
-        'solutions have no water table or base, so they apply until the plume reaches either.\n'
+        '- The aquifer extends a long way downstream and, for 2D and 3D, sideways.\n'
+        '- In the 3D solutions the water table is flat, at z = 0, and solute cannot cross it. This '
+        'is done by adding a mirror image of the source above the water table. There is no '
+        'recharge, and the aquifer has no base, so they apply until the plume reaches the base.\n'
         '- The 2D solutions assume the solute is mixed over the full thickness of the aquifer.\n'
         '- Sorption is linear, instant and reversible. Decay is first order.\n'
         '- The source does not change the flow, and the solute does not change the density of '
@@ -263,17 +264,25 @@ if key == 'point2':
     entered['Aquifer thickness b (m)'] = f"{geometry['thickness']:g}"
 if any(value <= 0 for value in geometry.values()):
     problems.append('The source size and aquifer thickness must be greater than zero.')
+if dims == 3:
+    geometry['depth'] = st.number_input(
+        'Depth of the ' + ('centre of the ' if key == 'patch' else '') + 'source below the water table (m)',
+        value=10.0, min_value=0.0, format='%g',
+        help='The water table is at z = 0 and z increases downwards. Solute cannot cross the water table.')
+    entered['Source depth below the water table (m)'] = f"{geometry['depth']:g}"
+    if key == 'patch' and geometry['depth'] < geometry['height'] / 2:
+        problems.append('The source reaches above the water table. Make it deeper or less high.')
 
 source_column = 'Mass rate (g/d)' if mass_source else 'Concentration (mg/L)'
 start_column = f'Start ({time_unit})'
 if mass_source:
     st.caption('Each row sets the mass of solute released per day from its start time until the next '
                'row. End with a row of zero to switch the source off. The source is at x = 0, y = 0'
-               + (', z = 0.' if dims == 3 else '.'))
+               + (', at the depth above.' if dims == 3 else '.'))
 else:
     st.caption('Each row sets the source concentration from its start time until the next row. End '
                'with a row of zero to switch the source off. The source is at x = 0'
-               + ('.' if dims == 1 else ', centred on y = 0' + (' and z = 0.' if dims == 3 else '.')))
+               + ('.' if dims == 1 else ', centred on y = 0' + (' and the depth above.' if dims == 3 else '.')))
 switch_off = 5.0 if time_unit == 'years' else 1800.0
 default_source = pd.DataFrame({start_column: [0.0, switch_off], source_column: [100.0, 0.0]})
 source_table = st.data_editor(
@@ -290,15 +299,15 @@ st.header('4. Observation points and times')
 st.caption('Points where the concentration through time is wanted, such as monitoring bores. x is the '
            'distance from the source along the flow'
            + {1: '.', 2: ' and y is the distance across it.',
-              3: ', y is the distance across it and z is the height above the centre of the source.'}[dims])
-default_points = pd.DataFrame({'Name': ['Obs 1', 'Obs 2'], 'x': [100.0, 300.0], 'y': [0.0, 0.0], 'z': [0.0, 0.0]})
+              3: ', y is the distance across it and z is the depth below the water table.'}[dims])
+default_points = pd.DataFrame({'Name': ['Obs 1', 'Obs 2'], 'x': [100.0, 300.0], 'y': [0.0, 0.0], 'z': [10.0, 10.0]})
 point_columns = ['Name', 'x', 'y', 'z'][:dims + 1]
 point_table = st.data_editor(
     default_points[point_columns], num_rows='dynamic', width='stretch', hide_index=True, key=f'points_{dims}',
     column_config={'Name': st.column_config.TextColumn('Name', required=True),
                    'x': st.column_config.NumberColumn('x (m)', required=True),
                    'y': st.column_config.NumberColumn('y (m)', default=0.0),
-                   'z': st.column_config.NumberColumn('z (m)', default=0.0)})
+                   'z': st.column_config.NumberColumn('z (m)', default=10.0, min_value=0.0)})
 points = []
 for _, row in point_table.dropna(subset=['Name', 'x']).iterrows():
     points.append(dict(name=str(row['Name']).strip(), x=float(row['x']),
@@ -312,7 +321,9 @@ if any(q['name'] in ('Time', 'Source') for q in points):
     problems.append('An observation point cannot be named Time or Source.')
 if not mass_source and any(q['x'] < 0 for q in points):
     problems.append('This source sits on the upstream edge of the aquifer, so observation points need x of zero or more.')
-if mass_source and any(q['x'] == 0 and q['y'] == 0 and q['z'] == 0 for q in points):
+if dims == 3 and any(q['z'] < 0 for q in points):
+    problems.append('Observation points cannot be above the water table (z below zero).')
+if mass_source and any(q['x'] == 0 and q['y'] == 0 and q['z'] == geometry.get('depth', 0.0) for q in points):
     problems.append('An observation point cannot sit on a point source, where the concentration is not defined.')
 
 col_t1, col_t2 = st.columns(2)
@@ -370,7 +381,8 @@ if st.button('Run', type='primary', disabled=not ready):
             result = dict(solution=solution, key=key, dims=dims, mass_source=mass_source, p=dict(p),
                           geometry=dict(geometry), ts=ts, cs=cs, points=points, snapshots=snapshots,
                           t_end=t_end, time_unit=time_unit, tf=tf, curves=curves, xs=xs,
-                          profiles=engine.profiles(key, p, geometry, ts, cs, xs, snapshots),
+                          profiles=engine.profiles(key, p, geometry, ts, cs, xs, snapshots,
+                                                   z=geometry.get('depth', 0.0)),
                           summary=engine.summary(key, p, ts, cs, points, curves),
                           derived=engine.derived(p, dims), source_column=source_column)
             if dims == 2:
@@ -467,19 +479,18 @@ if 'result' in st.session_state:
                'the point. Dispersion brings the first solute earlier than this.')
 
     st.subheader('Concentration along the flow')
-    profile_top = None
+    profile_shown = r['profiles']
     if rmass:
-        # the centreline passes through the point source, so the axis stops short of the values close to it
-        away = np.abs(xs) > 0.03 * (xs[-1] - xs[0])
-        profile_top = 1.2 * np.nanmax(r['profiles'][away])
-    show(plots.profile(xs, r['profiles'], r['snapshots'], rpoints, colours, unit, f, rdims > 1, profile_top),
+        # the line passes through the point source, where the concentration has no limit, so leave a gap there
+        profile_shown = np.where((np.abs(xs) < 0.03 * (xs[-1] - xs[0]))[:, None], np.nan, profile_shown)
+    show(plots.profile(xs, profile_shown, r['snapshots'], rpoints, colours, unit, f, rdims > 1, 0.0 if rmass else None),
          f'{prefix}_profile')
     if rmass:
-        st.caption('Concentration on the line through the source (y = 0' + (', z = 0' if rdims == 3 else '')
-                   + '). Values close to the point source rise without limit and run off the top of the plot.')
+        st.caption('Concentration on the line through the source (y = 0' + (', z = source depth' if rdims == 3 else '')
+                   + '). The concentration rises without limit at a point source, so the lines stop short of it.')
     elif rdims > 1:
         st.caption('Concentration on the line through the centre of the source (y = 0'
-                   + (', z = 0).' if rdims == 3 else ').'))
+                   + (', z = source depth).' if rdims == 3 else ').'))
 
     sheets = {}
     if rdims >= 2:
@@ -510,12 +521,12 @@ if 'result' in st.session_state:
         st.caption('Three slices through the plume. Set where each slice is taken. The dashed lines mark '
                    'the other two slices. These update without pressing Run.')
         cut_columns = st.columns(3)
-        cut = dict(z=cut_columns[0].number_input('Slice from above at z (m)', value=0.0, format='%g'),
+        cut = dict(z=cut_columns[0].number_input('Slice from above at depth z (m)', value=rg['depth'], min_value=0.0, format='%g'),
                    y=cut_columns[1].number_input('Slice from the side at y (m)', value=0.0, format='%g'),
                    x=cut_columns[2].number_input('Slice across the flow at x (m)', value=rpoints[0]['x'], format='%g'))
         map_x = np.linspace(x0, x1, MAP_NX)
         map_y = np.linspace(-half_y, half_y, MAP_NY)
-        map_z = np.linspace(-half_z, half_z, MAP_NZ)
+        map_z = np.linspace(0, rg['depth'] + half_z, MAP_NZ)
         with st.spinner('Calculating the plume slices...'):
             plan = calc_grid(*args, tuple(map_x), tuple(map_y), chosen, 'xy', cut['z'])
             side = calc_grid(*args, tuple(map_x), tuple(map_z), chosen, 'xz', cut['y'])
@@ -525,8 +536,9 @@ if 'result' in st.session_state:
         lev = plots.levels(top, log_scale)
         show(plots.slices(rkey, rg, map_x, map_y, map_z, plan, side, across, cut, chosen, rpoints, colours,
                           unit, f, lev, log_scale), f'{prefix}_slices')
-        st.caption('White is below the lowest level on the scale. The axes are not drawn to the same '
-                   'scale, so the plume looks thicker than it is.')
+        st.caption('White is below the lowest level on the scale. The water table is at z = 0 and depth '
+                   'increases downwards. The axes are not drawn to the same scale, so the plume looks '
+                   'thicker than it is.')
         label = plots.time_label(chosen, unit, f)
         sheets[f'Above {label}'] = matrix(plan, map_x, map_y, 'y (m) down, x (m) across')
         sheets[f'Side {label}'] = matrix(side, map_x, map_z, 'z (m) down, x (m) across')
@@ -536,7 +548,7 @@ if 'result' in st.session_state:
                        help='Shells of equal concentration that can be rotated. Takes a few seconds.'):
             vol_x = np.linspace(x0, x1, 56)
             vol_y = np.linspace(-half_y, half_y, 29)
-            vol_z = np.linspace(-half_z, half_z, 23)
+            vol_z = np.linspace(0, rg['depth'] + half_z, 23)
             with st.spinner('Calculating the 3D view...'):
                 volume = calc_volume(*args, tuple(vol_x), tuple(vol_y), tuple(vol_z), chosen)
             shells = [fraction * top for fraction in (0.01, 0.1, 0.5)]

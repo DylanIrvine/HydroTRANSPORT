@@ -45,15 +45,16 @@ SOLUTIONS = {
         key='point3', dims=3, source='mass',
         summary='A source at one point that releases solute at a set mass rate. The plume '
                 'spreads along the flow, sideways and vertically.',
-        when='Use it for a small source in a thick aquifer. The aquifer has no top or base in '
-             'this solution, so it suits a plume that has not reached either. The concentration '
-             'is not defined at the source itself.'),
+        when='Use it for a small source in a thick aquifer. Solute cannot cross the water table, '
+             'and the aquifer has no base in this solution, so it suits a plume that has not '
+             'reached the base. The concentration is not defined at the source itself.'),
     '3D, patch source across the flow': dict(
         key='patch', dims=3, source='concentration',
         summary='A rectangle of set width and height across the flow at x = 0, held at a set '
                 'concentration. The plume spreads along the flow, sideways and vertically.',
-        when='Use it for a source zone of known size in a thick aquifer. The aquifer has no top '
-             'or base in this solution, so it suits a plume that has not reached either.'),
+        when='Use it for a source zone of known size in a thick aquifer. Solute cannot cross the '
+             'water table, and the aquifer has no base in this solution, so it suits a plume that '
+             'has not reached the base.'),
 }
 KEYS = {name: info['key'] for name, info in SOLUTIONS.items()}
 
@@ -196,24 +197,32 @@ def _across(lower, upper, D, tau):
     return erfc(lower / s) - erfc(upper / s)
 
 
-def _strip(x, y, z, t, ts, cs, v, Dx, Dy, Dz, lam, width, height):
-    # Wexler (1992) equation 91b (strip, height None) and 121b (patch). Source centred on y = 0, z = 0
+def _strip(x, y, z, t, ts, cs, v, Dx, Dy, Dz, lam, width, height, depth=None):
+    # Wexler (1992) equation 91b (strip, height None) and 121b (patch). Source centred on y = 0.
+    # With no depth the patch is centred on z = 0 in an aquifer with no top. With a depth, z is
+    # measured down from the water table, the patch is centred at that depth, and an image
+    # patch above the water table stops solute crossing it
     s2 = x ** 2 / Dx
     patch = height is not None
+    centre = 0.0 if depth is None else depth
 
     def kernel(tau, rows):
         a, b = x[rows][:, None, None], y[rows][:, None, None]
         g = (a / (4 * np.sqrt(np.pi * Dx * tau)) * np.exp(-(a - v * tau) ** 2 / (4 * Dx * tau) - lam * tau)
              * _across(-width / 2 - b, width / 2 - b, Dy, tau))
         if patch:
-            g = g * 0.5 * _across(-height / 2 - z[rows][:, None, None], height / 2 - z[rows][:, None, None], Dz, tau)
+            c = z[rows][:, None, None] - centre
+            share = _across(-height / 2 - c, height / 2 - c, Dz, tau)
+            if depth is not None:
+                share = share + _across(-height / 2 - c - 2 * centre, height / 2 - c - 2 * centre, Dz, tau)
+            g = g * 0.5 * share
         return g
 
     c = _integrate(kernel, t, s2, *_arrival(x, v, Dx), ts, cs)
     # on the source plane the concentration is the source itself, inside the source
     inside = np.abs(y) <= width / 2
     if patch:
-        inside = inside & (np.abs(z) <= height / 2)
+        inside = inside & (np.abs(z - centre) <= height / 2)
     c = np.where(_too_close(s2, t), np.where(inside, source_value(ts, cs, t), 0.0), c)
     return np.where(x < 0, np.nan, c)
 
@@ -250,6 +259,9 @@ def _inlet3(x, t, ts, cs, v, D, lam):
 def concentration(key, p, geometry, ts, cs, x, y=0.0, z=0.0, t=1.0):
     # concentration (g/m³) at x, y, z and time t, which are broadcast against each other.
     # p holds v, n, al, ah, av, Dm, R and lam. geometry holds width, height and thickness as needed.
+    # For the 3D solutions geometry may hold depth. Then z is depth below the water table, the
+    # source is at that depth, and the water table is a barrier to solute (an image source
+    # is added above it). Without depth the aquifer has no top and the source is at z = 0.
     # ts and cs are the source history: start time of each stage and its value, which is a
     # concentration (g/m³) or, for the point sources, a mass rate (g/d).
     # The source sits at the origin and flow is in the +x direction
@@ -259,6 +271,7 @@ def concentration(key, p, geometry, ts, cs, x, y=0.0, z=0.0, t=1.0):
     ts, cs = np.asarray(ts, float), np.asarray(cs, float)
     v, Dx, Dy, Dz = retarded(p)
     lam, n, R = p['lam'], p['n'], p['R']
+    depth = geometry.get('depth') if key in ('point3', 'patch') else None
 
     out = np.zeros(x.shape)
     live = t > ts[0]
@@ -269,19 +282,26 @@ def concentration(key, p, geometry, ts, cs, x, y=0.0, z=0.0, t=1.0):
         elif key == 'inlet3':
             c = _inlet3(np.maximum(xl, 0), tl, ts, cs, v, Dx, lam)
         elif key == 'point3':
-            c = _superpose(lambda a, b, d, time: step_point3(a, b, d, time, v, Dx, Dy, Dz, lam, n, R),
-                           ts, cs, tl, xl, yl, zl)
+            def point(a, b, d, time):
+                return step_point3(a, b, d, time, v, Dx, Dy, Dz, lam, n, R)
+            if depth is None:
+                c = _superpose(point, ts, cs, tl, xl, yl, zl)
+            else:
+                c = _superpose(point, ts, cs, tl, xl, yl, zl - depth) + _superpose(point, ts, cs, tl, xl, yl, zl + depth)
         elif key == 'point2':
             c = _point2(xl, yl, tl, ts, cs, v, Dx, Dy, lam, n, R, geometry['thickness'])
         elif key == 'strip':
             c = _strip(xl, yl, zl, tl, ts, cs, v, Dx, Dy, Dz, lam, geometry['width'], None)
         elif key == 'patch':
-            c = _strip(xl, yl, zl, tl, ts, cs, v, Dx, Dy, Dz, lam, geometry['width'], geometry['height'])
+            c = _strip(xl, yl, zl, tl, ts, cs, v, Dx, Dy, Dz, lam, geometry['width'], geometry['height'], depth)
         else:
             raise ValueError(f'unknown solution {key}')
         out[live] = c
     if key in ('inlet1', 'inlet3'):
         out = np.where(x < 0, np.nan, out)
+    if depth is not None:
+        # above the water table
+        out = np.where(z < 0, np.nan, out)
     # rounding can leave values a hair below zero after a step down
     out = np.where(out < 0, 0.0, out)
     return out.reshape(shape)

@@ -101,7 +101,7 @@ def summary(key, p, ts, cs, points, curves):
 def extent(key, p, geometry, points, t_max, spread=2.2):
     # plot limits that hold the plume at t_max and the observation points.
     # spread is the number of standard deviations shown across the flow.
-    # Returns x0, x1, half-width in y and half-height in z
+    # Returns x0, x1, half-width in y and half-height in z about the source
     v, Dx, Dy, Dz = solutions.retarded(p)
     reach = v * t_max + 2.5 * np.sqrt(2 * Dx * t_max)
     if p['lam'] > 0:
@@ -113,7 +113,7 @@ def extent(key, p, geometry, points, t_max, spread=2.2):
     half_y = geometry.get('width', 0.0) / 2 + spread * np.sqrt(2 * Dy * travel)
     half_z = geometry.get('height', 0.0) / 2 + spread * np.sqrt(2 * Dz * travel)
     half_y = max([half_y] + [1.15 * abs(q['y']) for q in points])
-    half_z = max([half_z] + [1.15 * abs(q['z']) for q in points])
+    half_z = max([half_z] + [1.15 * abs(q['z'] - geometry.get('depth', 0.0)) for q in points])
     x0 = -0.08 * x1 if key in ('point2', 'point3') else 0.0
     x0 = min([x0] + [1.15 * q['x'] for q in points if q['x'] < 0])
     return x0, x1, half_y, half_z

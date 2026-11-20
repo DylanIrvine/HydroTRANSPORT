@@ -88,12 +88,13 @@ def time_label(t, unit, factor):
 def _draw_source(ax, key, geometry, c, plane='xy'):
     # the source on a map. plane is 'xy' or 'xz'
     if key in ('point2', 'point3'):
-        ax.plot(0, 0, marker='*', color=c['Source'], mec='white', mew=0.5, ms=11, ls='none', zorder=5)
+        ax.plot(0, geometry.get('depth', 0.0) if plane == 'xz' else 0, marker='*', color=c['Source'], mec='white', mew=0.5, ms=11, ls='none', zorder=5)
     elif plane == 'xy':
         ax.plot([0, 0], [-geometry['width'] / 2, geometry['width'] / 2], color=c['Source'], lw=3,
                 solid_capstyle='butt', zorder=5, clip_on=False)
     else:
-        ax.plot([0, 0], [-geometry['height'] / 2, geometry['height'] / 2], color=c['Source'], lw=3,
+        depth = geometry.get('depth', 0.0)
+        ax.plot([0, 0], [depth - geometry['height'] / 2, depth + geometry['height'] / 2], color=c['Source'], lw=3,
                 solid_capstyle='butt', zorder=5, clip_on=False)
 
 
@@ -145,9 +146,9 @@ def setup(key, geometry, points, ext, c):
         side.set_facecolor(AQUIFER)
         _draw_source(side, key, geometry, c, plane='xz')
         _draw_points(side, points, 'x', 'z')
-        side.set_ylim(-half_z, half_z)
-        side.set_ylabel('z (m)')
-        side.set_title('From the side', loc='left', fontsize=8, color='0.3')
+        side.set_ylim(geometry.get('depth', 0.0) + half_z, 0)
+        side.set_ylabel('Depth, z (m)')
+        side.set_title('From the side. The water table is at z = 0', loc='left', fontsize=8, color='0.3')
     axes[-1, 0].set_xlim(x0, x1)
     axes[-1, 0].set_xlabel('x, distance along the flow (m)')
     fig.tight_layout()
@@ -176,8 +177,8 @@ def breakthrough(curves, points, c, unit, factor, source_label):
     return fig
 
 
-def profile(xs, values, times, points, c, unit, factor, centreline, top=None):
-    # concentration along x at each chosen time
+def profile(xs, values, times, points, c, unit, factor, centreline, source_x=None):
+    # concentration along x at each chosen time. source_x marks a point source, where the lines have a gap
     fig, ax = plt.subplots(figsize=cm(16, 8.5))
     for column, (t, colour) in enumerate(zip(times, series_colours(c, len(times)))):
         ax.plot(xs, values[:, column], color=colour, lw=1.6, label=time_label(t, unit, factor))
@@ -187,8 +188,12 @@ def profile(xs, values, times, points, c, unit, factor, centreline, top=None):
                     xytext=(2, -8), fontsize=7, color='0.4')
     ax.set_xlabel('x, distance along the flow (m)')
     ax.set_ylabel('Concentration on the centreline (mg/L)' if centreline else 'Concentration (mg/L)')
+    if source_x is not None:
+        ax.axvline(source_x, color=c['Source'], lw=0.8, ls=':')
+        ax.annotate('Source', (source_x, 1), xycoords=('data', 'axes fraction'), textcoords='offset points',
+                    xytext=(2, -8), fontsize=7, color=c['Source'])
     ax.set_xlim(xs[0], xs[-1])
-    ax.set_ylim(0, top)
+    ax.set_ylim(0, None)
     legend_above(ax, ncols=5)
     fig.tight_layout()
     return fig
@@ -276,7 +281,8 @@ def slices(key, geometry, xs, ys, zs, plan, side, across, cut, t, points, c, uni
     ax_side.set_title(f"From the side, at y = {cut['y']:g} m", loc='left', fontsize=9)
     ax_cross.set_title(f"Across the flow, at x = {cut['x']:g} m", loc='left', fontsize=9)
     ax_plan.set_ylabel('y (m)')
-    ax_side.set_ylabel('z (m)')
+    ax_side.set_ylabel('Depth, z (m)')
+    ax_side.set_ylim(zs[-1], zs[0])
     ax_side.set_xlabel('x, distance along the flow (m)')
     ax_cross.set_xlabel('y (m)')
     plt.setp(ax_plan.get_xticklabels(), visible=False)
@@ -305,6 +311,7 @@ def isosurfaces(xs, ys, zs, volume, shells, c, title):
     fig.update_layout(
         title=dict(text=title, font=dict(size=13)), margin=dict(l=0, r=0, t=40, b=0), height=520,
         legend=dict(orientation='h', y=1.0, yanchor='bottom', x=0),
-        scene=dict(xaxis_title='x (m)', yaxis_title='y (m)', zaxis_title='z (m)', aspectmode='manual',
+        scene=dict(xaxis_title='x (m)', yaxis_title='y (m)', zaxis_title='depth z (m)',
+                   zaxis_autorange='reversed', aspectmode='manual',
                    aspectratio=dict(x=2.2, y=1, z=0.7), camera=dict(eye=dict(x=-1.6, y=-2.0, z=1.1))))
     return fig

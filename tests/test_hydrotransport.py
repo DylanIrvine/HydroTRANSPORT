@@ -221,6 +221,27 @@ def test_source_switched_off():
     assert conc('inlet1', P, geometry, history, 0.0, t=[50.0, 150.0]) == pytest.approx([100.0, 0.0])
 
 
+def test_water_table_is_a_barrier():
+    history = ([0.0, 200.0], [1.0, 0.3])
+    for key, geometry in (('point3', dict(depth=3.0)), ('patch', dict(width=10.0, height=4.0, depth=3.0))):
+        # no vertical gradient at the water table, so no solute crosses it: the change in
+        # concentration just below it grows with the square of the depth, not in proportion to it
+        near = conc(key, P, geometry, history, 30.0, 2.0, np.array([0.0, 1e-3, 1e-2]), t=400.0)
+        assert (near[2] - near[0]) / (near[1] - near[0]) == pytest.approx(100, rel=0.01)
+        # it is the sum of the source and its mirror image in an aquifer with no top
+        free = dict(geometry, depth=None)
+        both = conc(key, P, free, history, 30.0, 2.0, 5.0 - 3.0, t=400.0) + conc(key, P, free, history, 30.0, 2.0, 5.0 + 3.0, t=400.0)
+        assert conc(key, P, geometry, history, 30.0, 2.0, 5.0, t=400.0) == pytest.approx(both, rel=1e-10)
+        # far below the water table the barrier makes no difference, and above it there is no aquifer
+        deep = dict(geometry, depth=500.0)
+        assert conc(key, P, deep, history, 30.0, 2.0, 501.0, t=400.0) == pytest.approx(
+            conc(key, P, free, history, 30.0, 2.0, 1.0, t=400.0), rel=1e-10)
+        assert np.isnan(conc(key, P, geometry, history, 30.0, 2.0, -1.0, t=400.0))
+    # a point source on the water table sends all its solute downwards: twice the concentration
+    assert conc('point3', P, dict(depth=0.0), ON, 30.0, 2.0, 1.0, t=400.0) == pytest.approx(
+        2 * conc('point3', P, {}, ON, 30.0, 2.0, 1.0, t=400.0), rel=1e-12)
+
+
 def test_retardation_delays_arrival():
     # with R = 2 the plume at time 2t matches the unretarded plume at time t (constant concentration sources)
     xs = np.array([5.0, 30.0, 80.0])
