@@ -42,13 +42,13 @@ with head_logo:
         st.image(str(LOGO), width='stretch')
 
 st.markdown(
-    'A solute released into groundwater is carried along by the flow, spreads out as it goes, and '
-    'may be slowed by sorption or lost to decay. HydroTRANSPORT shows how a plume grows, and how '
-    'it clears once the source is reduced or switched off, using six analytical solutions in one, '
-    'two and three dimensions. Choose a source, describe the aquifer, set a source history, and '
+    'A solute released into the subsurface is carried along by groundwater flow. The plume spreads, and '
+    'may be slowed by sorption or the contaminant decays. HydroTRANSPORT shows how a plume grows, and how '
+    'it clears once the source is reduced or switched off, using six analytical solutions, with 1D, 2D and '
+    '3D options. Choose a source, describe the aquifer, set a source history, and '
     'press Run. The results can be downloaded as one Excel workbook '
-    'with plots.\n\n'
-    'These solutions suit teaching and screening. They assume a uniform aquifer with steady flow '
+    'with associated plots.\n\n'
+    'These solutions suit teaching and screening. They assume a uniform flow field with steady flow '
     'in one direction, so they do not replace a site-specific model.')
 
 if 'run_count' not in st.session_state:
