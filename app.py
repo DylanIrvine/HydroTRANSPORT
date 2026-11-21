@@ -371,7 +371,10 @@ def matrix(values, columns, rows, corner):
     return table
 
 
-if st.button('Run', type='primary', disabled=not ready):
+run_pressed = st.button('Run', type='primary')
+if run_pressed and not ready:
+    st.error('Not run. Fix the points listed above, then press Run again.')
+if run_pressed and ready:
     try:
         with st.spinner('Calculating...'):
             times = np.unique(np.concatenate([np.linspace(0, t_end, N_TIMES), ts[ts < t_end]]))
